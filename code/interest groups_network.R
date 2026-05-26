@@ -10,32 +10,31 @@ pacman::p_load(dplyr,       # with data handling
                tidyr,       # with data handling
                readr,       # with data handling
                backbone,    # with bipartite projections
-               checkpoint,  # with reproduceability
                vroom,       # with csv reading
                igraph,      # with social network analysis
                qgraph,      # with addtional SNA
                GGally)      # with corrplot
 
-options(scipen = 999)
+options(scipen = 999, digits = 3)
 
 # Load data
-raw_data <- read_csv("data/interest_group_memberships.csv") # Replace
-
-
-# raw_data <- read.csv("data/interest_group_memberships.csv", sep = ";")
+raw_data <- read_csv2("data/interest_group_memberships.csv", # Replace
+                      col_types = "cicccci", na = "NA")
 
 ### WRANGLE DATA ###############################################################
 
-raw_data %>%
+raw_data <- raw_data %>%
   # Change names
-  mutate(interest_group = ifelse(interest_group == "Tekno",
-                                 "Teknologiateollisuus", interest_group),
-         # Change separators to clean up the code
-         interest_group = gsub(" ","_", interest_group),
-         interest_group = gsub("/","_", interest_group),
-         # Yearly boards
-         board = paste0(interest_group,"_",year))
-  # select(name, rank_among_top_earners, board, membership_type)
+  mutate(interest_group = ifelse(
+    interest_group == "Tekno", "Teknologiateollisuus", interest_group
+    ),
+    # Change separators to clean up the code
+    interest_group = gsub(" ","_", interest_group),
+    interest_group = as.factor(gsub("/","_", interest_group)),
+
+    # Yearly boards
+    board = paste0(interest_group,"_",year))
+# select(name, rank_among_top_earners, board, membership_type)
 
 grouped_data <- raw_data %>%
   group_by(name, rank_among_top_earners, board) %>%
@@ -60,9 +59,9 @@ glimpse(data_wider)
 # Make bipartite graph
 bipartite_data <- grouped_data[,c("name", "board")]
 
-B <- graph.data.frame(bipartite_data, directed = FALSE)
+B <- graph_from_data_frame(bipartite_data, directed = FALSE)
 
-bipartite.mapping(B)
+bipartite_mapping(B)
 
 V(B)$type <- bipartite_mapping(B)$type
 
@@ -72,28 +71,13 @@ E(B)$color <- "lightgray"
 
 plot(B, vertex.size = 2, vertex.label.cex = 0.8,
      layout = layout_with_fr,
-     vertex.label = ifelse(V(B)$type, V(B)$name, NA)
-     # vertex.label.color = "black"
-     )
-
-# Replace NA ranks_among_top_earners with 10,000
-grouped_data[is.na(grouped_data)] <- 10000
-
-glimpse(grouped_data)
-
-# Turn into wide format
-data_wider <-
-  spread(grouped_data, key = board, value = memberships)
-
-# Replace empty values with zeros
-data_wider[is.na(data_wider)] <- 0
-
-glimpse(data_wider)
+     vertex.label = ifelse(V(B)$type, V(B)$name, NA))
 
 View(node_attributes)
 
 # Build a dataframe for node attributes: how many interest groups, and wealth
 node_attributes <- raw_data %>%
+
   select(name, rank_among_top_earners, interest_group) %>%
 
   mutate(rank_among_top_earners = ifelse(is.na(rank_among_top_earners),
@@ -147,8 +131,8 @@ glimpse(mat_data_wider)
 P_artifacts <- t(mat_data_wider) %*% mat_data_wider # transpose columns
 P_agents <- mat_data_wider %*% t(mat_data_wider) # transpose rows
 
-View(P_agents)
-View(P_artifacts)
+glimpse(P_agents)
+glimpse(P_artifacts)
 
 # Construct weighted and unweighted graphs
 G <- graph_from_adjacency_matrix(
@@ -163,7 +147,7 @@ unweighted_G <-
 
 vcount(G)
 ecount(G)
-graph.density(G)
+edge_density(G) # 0.068
 
 vcount(G2)
 ecount(G2)
@@ -172,8 +156,8 @@ graph.density(G2)
 plot(G, vertex.size = 4, vertex.label = NA, edge.width = E(G)$weight)
 
 multilevel <- multilevel.community(G2)
-fg <- fastgreedy.community(G2)
-optimal <- optimal.community(G2)
+fg <- cluster_fast_greedy(G2)
+optimal <- cluster_optimal(G2)
 
 colors <- rainbow(max(membership(multilevel)))
 colors <- rainbow(max(membership(fg)))
@@ -184,8 +168,6 @@ plot(G2, vertex.size = 4, vertex.label.cex = 0.4, edge.color = "gray90",
      edge.width = E(G_artifacts)$weight / 100,
      # vertex.color = "salmon"
      vertex.color = colors[membership(fg)])
-
-
 
 # Centrality measures, agents
 V(G)$betweenness <- betweenness(G, directed = FALSE,
@@ -216,7 +198,9 @@ View(network_centrality_artifacts)
 
 plot(G2)
 
-# Ego network, AH
+# Ego network, Antti Herlin
+set.seed(1234)
+
 vid_ah <- V(B)[V(B)$name == "Antti Herlin"]
 
 ego_ah <- ego(B, order = 2, nodes = vid_ah, mode = c("all"))
@@ -226,11 +210,22 @@ ego_size(B, V(B)[25], order = 1, mode = "all") # How many interest_groups
 ego_size(B, V(B)[25], order = 2, mode = "all") # + all agents affiliated to them
 
 plot(ego_ah, vertex.size = 4, layout = layout_with_fr,
-     vertex.label.cex = 0.4, vertex.label.family = "sans",
-     vertex.color = ifelse(V(ego_ah)$name == "Antti Herlin",
-                           "gold", V(ego_ah)$color))
+  vertex.label.cex = 0.4, vertex.label.family = "sans",
+  vertex.color = ifelse(V(ego_ah)$name == "Antti Herlin",
+                        "gold", V(ego_ah)$color))
 
-# Ego network, RS
+# Save plot to pdf, uncomment
+# ggsave(
+#   "plots/herlin_interest_group_links.pdf",
+#   plot = get_last_plot(),
+#   device = "pdf",
+#   scale = 1,
+#   width = 170,
+#   height = 127,
+#   units = "mm",
+#   dpi = 300)
+
+# Ego network, Risto Siilasmaa
 vid_rs <- V(B)[V(B)$name == "Risto Siilasmaa"]
 
 ego_rs <- ego(B, order = 2, nodes = vid_rs, mode = c("all"))
@@ -244,9 +239,16 @@ plot(ego_ah, vertex.size = 4, layout = layout_with_fr,
      vertex.color = ifelse(V(ego_ah)$name == "Risto Siilasmaa",
                            "gold", V(ego_ah)$color))
 
-# V(G)[betweenness == max(betweenness)]
-# neighbors(G, V(G)[betweenness == max(betweenness)])
-# max(V(G)$betweenness)
+# Save plot to pdf, uncomment
+# ggsave(
+#   "plots/siilasmaa_interest_group_links.pdf",
+#   plot = get_last_plot(),
+#   device = "pdf",
+#   scale = 1,
+#   width = 170,
+#   height = 127,
+#   units = "mm",
+#   dpi = 300)
 
 # Add network attributes
 vertex_order <- get.vertex.attribute(G, "name")
