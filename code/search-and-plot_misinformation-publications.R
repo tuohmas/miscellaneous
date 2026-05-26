@@ -30,8 +30,7 @@ pacman::p_load(dplyr,        # For data manipulation
                hrbrthemes,   # For visualizations
                viridis,      # For visualizations
                facetscales,  # For visualizations
-               ggh4x        # For visualizations
-               # wesanderson)  # For visualizations
+               ggh4x         # For visualizations
 )
 
 sessionInfo()
